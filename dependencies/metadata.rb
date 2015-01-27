@@ -7,7 +7,6 @@ version     "1.0.0"
 depends "ruby"
 depends "gem_support"
 depends "packages"
-depends "opsworks_nodejs"
 
 recipe "dependencies::update", "Update all packages and gems"
 
