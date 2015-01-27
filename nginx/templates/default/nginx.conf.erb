@@ -1,53 +1,53 @@
-<% if @application[:nginx][:proxy_cache] == "on" %>
-proxy_cache_path <%= @application[:deploy_to]%>/nginx_cache levels=1:2 keys_zone=zone_<%= @application[:domains].first %>:10m max_size=500m inactive=24h;
+<% if node[:nginx][:proxy_cache] == "on" %>
+proxy_cache_path <%= node[:deploy_to]%>/nginx_cache levels=1:2 keys_zone=zone_<%= node[:domains].first %>:10m max_size=500m inactive=24h;
 proxy_cache_methods GET HEAD;
 proxy_cache_lock on;
 proxy_cache_lock_timeout 4s;
 proxy_cache_use_stale timeout updating;
 <% end %>
 
-<% if @application[:nginx][:redirection] %>
+<% if node[:nginx][:redirection] %>
 server {
-  listen <%= @application[:nginx][:redirection][:port] %>;
-  rewrite ^(.*) <%= @application[:nginx][:redirection][:url] %>$1 permanent;
+  listen <%= node[:nginx][:redirection][:port] %>;
+  rewrite ^(.*) <%= node[:nginx][:redirection][:url] %>$1 permanent;
 }
 <% end %>
 
-upstream unicorn_<%= @application[:domains].first %> {
- server unix:<%= @application[:deploy_to]%>/shared/sockets/unicorn.sock fail_timeout=0;
+upstream unicorn_<%= node[:domains].first %> {
+ server unix:<%= node[:deploy_to]%>/shared/sockets/unicorn.sock fail_timeout=0;
 }
 
 server {
   listen 80;
-  server_name <%= @application[:domains].join(" ") %> <%= node[:hostname] %>;
+  server_name <%= node[:domains].join(" ") %> <%= node[:hostname] %>;
 
-  <% if @application[:log_format] %>
-    <% @application[:log_format].each do |log_format_name| %>
-  access_log <%= node[:nginx][:log_dir] %>/<%= @application[:domains].first %>.access.<%= log_format_name %>.log <%= log_format_name %>;
+  <% if node[:log_format] %>
+    <% node[:log_format].each do |log_format_name| %>
+  access_log <%= node[:nginx][:log_dir] %>/<%= node[:domains].first %>.access.<%= log_format_name %>.log <%= log_format_name %>;
     <% end %>
   <% else %>
-  access_log <%= node[:nginx][:log_dir] %>/<%= @application[:domains].first %>.access.log;
+  access_log <%= node[:nginx][:log_dir] %>/<%= node[:domains].first %>.access.log;
   <%end %>
 
   keepalive_timeout 5;
 
-  root <%= @application[:absolute_document_root] %>;
+  root <%= node[:absolute_document_root] %>;
 
-  <% if @application[:nginx] && @application[:nginx][:client_max_body_size] %>
-    client_max_body_size <%= @application[:nginx][:client_max_body_size] %>;
+  <% if node[:nginx] && node[:nginx][:client_max_body_size] %>
+    client_max_body_size <%= node[:nginx][:client_max_body_size] %>;
   <% end %>
 
   # TODO - handle more than one
-  <% if @application[:nginx][:locations] %>
-  location ~ <%= @application[:nginx][:locations][0][:regex] %> {
-    <% if @application[:nginx][:locations][0][:cacheheaders] == "on" %>
+  <% if node[:nginx][:locations] %>
+  location ~ <%= node[:nginx][:locations][0][:regex] %> {
+    <% if node[:nginx][:locations][0][:cacheheaders] == "on" %>
     expires 1y;
     add_header Cache-Control public;
     add_header Last-Modified "";
     add_header ETag $1;
     <% end %>
-    <% if @application[:nginx][:locations][0][:origin] %>
-    add_header Access-Control-Allow-Origin <%= @application[:nginx][:locations][0][:origin] %>;
+    <% if node[:nginx][:locations][0][:origin] %>
+    add_header Access-Control-Allow-Origin <%= node[:nginx][:locations][0][:origin] %>;
     <% end %>
     break;
   }
@@ -72,15 +72,15 @@ server {
     # If you don't find the filename in the static files
     # Then request it from the unicorn server
     if (!-f $request_filename) {
-      proxy_pass http://unicorn_<%= @application[:domains].first %>;
+      proxy_pass http://unicorn_<%= node[:domains].first %>;
       break;
     }
 
     # Derby customizations
-    <% if @application[:nginx][:proxy_cache] == "on" %>
+    <% if node[:nginx][:proxy_cache] == "on" %>
     add_header X-Cache-Status $upstream_cache_status;
 
-    proxy_cache zone_<%= @application[:domains].first %>;
+    proxy_cache zone_<%= node[:domains].first %>;
     <% end %>
   }
 
@@ -93,31 +93,31 @@ server {
 
   error_page 500 502 503 504 /500.html;
   location = /500.html {
-    root <%= @application[:absolute_document_root] %>;
+    root <%= node[:absolute_document_root] %>;
   }
 
   server_tokens off;
 }
 
-<% if @application[:ssl_support] %>
+<% if node[:ssl_support] %>
 server {
   listen   443;
-  server_name <%= @application[:domains].join(" ") %> <%= node[:hostname] %>;
-  access_log <%= node[:nginx][:log_dir] %>/<%= @application[:domains].first %>-ssl.access.log;
+  server_name <%= node[:domains].join(" ") %> <%= node[:hostname] %>;
+  access_log <%= node[:nginx][:log_dir] %>/<%= node[:domains].first %>-ssl.access.log;
 
   ssl on;
-  ssl_certificate /etc/nginx/ssl/<%= @application[:domains].first %>.crt;
-  ssl_certificate_key /etc/nginx/ssl/<%= @application[:domains].first %>.key;
-  <% if @application[:ssl_certificate_ca] -%>
-  ssl_client_certificate /etc/nginx/ssl/<%= @application[:domains].first %>.ca;
+  ssl_certificate /etc/nginx/ssl/<%= node[:domains].first %>.crt;
+  ssl_certificate_key /etc/nginx/ssl/<%= node[:domains].first %>.key;
+  <% if node[:ssl_certificate_ca] -%>
+  ssl_client_certificate /etc/nginx/ssl/<%= node[:domains].first %>.ca;
   <% end -%>
 
   keepalive_timeout 5;
 
-  root <%= @application[:absolute_document_root] %>;
+  root <%= node[:absolute_document_root] %>;
 
-  <% if @application[:nginx] && @application[:nginx][:client_max_body_size] %>
-    client_max_body_size <%= @application[:nginx][:client_max_body_size] %>;
+  <% if node[:nginx] && node[:nginx][:client_max_body_size] %>
+    client_max_body_size <%= node[:nginx][:client_max_body_size] %>;
   <% end %>
 
   location / {
@@ -140,14 +140,14 @@ server {
     # If you don't find the filename in the static files
     # Then request it from the unicorn server
     if (!-f $request_filename) {
-      proxy_pass http://unicorn_<%= @application[:domains].first %>;
+      proxy_pass http://unicorn_<%= node[:domains].first %>;
       break;
     }
   }
 
   error_page 500 502 503 504 /500.html;
   location = /500.html {
-    root <%= @application[:absolute_document_root] %>;
+    root <%= node[:absolute_document_root] %>;
   }
 }
 <% end %>
