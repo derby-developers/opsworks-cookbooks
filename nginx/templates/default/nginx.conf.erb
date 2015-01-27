@@ -1,153 +1,46 @@
-<% if node[:nginx][:proxy_cache] == "on" %>
-proxy_cache_path <%= node[:deploy_to]%>/nginx_cache levels=1:2 keys_zone=zone_<%= node[:domains].first %>:10m max_size=500m inactive=24h;
-proxy_cache_methods GET HEAD;
-proxy_cache_lock on;
-proxy_cache_lock_timeout 4s;
-proxy_cache_use_stale timeout updating;
-<% end %>
+user <%= node[:nginx][:user] %>;
+worker_processes  <%= node[:nginx][:worker_processes] %>;
 
-<% if node[:nginx][:redirection] %>
-server {
-  listen <%= node[:nginx][:redirection][:port] %>;
-  rewrite ^(.*) <%= node[:nginx][:redirection][:url] %>$1 permanent;
-}
-<% end %>
+error_log  <%= node[:nginx][:log_dir] %>/error.log;
+pid        <%= node[:nginx][:pid_file] %>;
 
-upstream unicorn_<%= node[:domains].first %> {
- server unix:<%= node[:deploy_to]%>/shared/sockets/unicorn.sock fail_timeout=0;
+events {
+  worker_connections  <%= node[:nginx][:worker_connections] %>;
 }
 
-server {
-  listen 80;
-  server_name <%= node[:domains].join(" ") %> <%= node[:hostname] %>;
+http {
+  include       <%= node[:nginx][:dir] %>/mime.types;
+  default_type  application/octet-stream;
 
-  <% if node[:log_format] %>
-    <% node[:log_format].each do |log_format_name| %>
-  access_log <%= node[:nginx][:log_dir] %>/<%= node[:domains].first %>.access.<%= log_format_name %>.log <%= log_format_name %>;
-    <% end %>
-  <% else %>
-  access_log <%= node[:nginx][:log_dir] %>/<%= node[:domains].first %>.access.log;
-  <%end %>
-
-  keepalive_timeout 5;
-
-  root <%= node[:absolute_document_root] %>;
-
-  <% if node[:nginx] && node[:nginx][:client_max_body_size] %>
-    client_max_body_size <%= node[:nginx][:client_max_body_size] %>;
+  <% node[:nginx][:log_format].each do |name, format| %>
+  log_format <%= name %> <%= format %>;
   <% end %>
 
-  # TODO - handle more than one
-  <% if node[:nginx][:locations] %>
-  location ~ <%= node[:nginx][:locations][0][:regex] %> {
-    <% if node[:nginx][:locations][0][:cacheheaders] == "on" %>
-    expires 1y;
-    add_header Cache-Control public;
-    add_header Last-Modified "";
-    add_header ETag $1;
-    <% end %>
-    <% if node[:nginx][:locations][0][:origin] %>
-    add_header Access-Control-Allow-Origin <%= node[:nginx][:locations][0][:origin] %>;
-    <% end %>
-    break;
-  }
+  access_log	<%= node[:nginx][:log_dir] %>/access.log;
+
+  sendfile on;
+  tcp_nopush on;
+  tcp_nodelay on;
+
+  <% if node[:nginx][:keepalive] == "on" %>
+  keepalive_timeout  <%= node[:nginx][:keepalive_timeout] %>;
   <% end %>
 
-  location / {
-    try_files $uri/index.html $uri/index.htm @unicorn;
-  }
-
-  location @unicorn {
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header Host $http_host;
-    proxy_redirect off;
-
-  <% if node[:nginx] && node[:nginx][:proxy_read_timeout] -%>
-    proxy_read_timeout <%= node[:nginx][:proxy_read_timeout] %>;
-  <% end -%>
-  <% if node[:nginx] && node[:nginx][:proxy_send_timeout] -%>
-    proxy_send_timeout <%= node[:nginx][:proxy_send_timeout] %>;
-  <% end -%>
-
-    # If you don't find the filename in the static files
-    # Then request it from the unicorn server
-    if (!-f $request_filename) {
-      proxy_pass http://unicorn_<%= node[:domains].first %>;
-      break;
-    }
-
-    # Derby customizations
-    <% if node[:nginx][:proxy_cache] == "on" %>
-    add_header X-Cache-Status $upstream_cache_status;
-
-    proxy_cache zone_<%= node[:domains].first %>;
-    <% end %>
-  }
-
-  location /nginx_status {
-    stub_status on;
-    access_log off;
-    allow 127.0.0.1;
-    deny all;
-  }
-
-  error_page 500 502 503 504 /500.html;
-  location = /500.html {
-    root <%= node[:absolute_document_root] %>;
-  }
-
-  server_tokens off;
-}
-
-<% if node[:ssl_support] %>
-server {
-  listen   443;
-  server_name <%= node[:domains].join(" ") %> <%= node[:hostname] %>;
-  access_log <%= node[:nginx][:log_dir] %>/<%= node[:domains].first %>-ssl.access.log;
-
-  ssl on;
-  ssl_certificate /etc/nginx/ssl/<%= node[:domains].first %>.crt;
-  ssl_certificate_key /etc/nginx/ssl/<%= node[:domains].first %>.key;
-  <% if node[:ssl_certificate_ca] -%>
-  ssl_client_certificate /etc/nginx/ssl/<%= node[:domains].first %>.ca;
-  <% end -%>
-
-  keepalive_timeout 5;
-
-  root <%= node[:absolute_document_root] %>;
-
-  <% if node[:nginx] && node[:nginx][:client_max_body_size] %>
-    client_max_body_size <%= node[:nginx][:client_max_body_size] %>;
+  gzip  <%= node[:nginx][:gzip] %>;
+  gzip_static  <%= node[:nginx][:gzip_static] %>;
+  <% if node[:nginx][:gzip] == "on" %>
+  gzip_http_version <%= node[:nginx][:gzip_http_version] %>;
+  gzip_comp_level <%= node[:nginx][:gzip_comp_level] %>;
+  gzip_proxied <%= node[:nginx][:gzip_proxied] %>;
+  gzip_types <%= node[:nginx][:gzip_types].join(' ') %>;
+  gzip_vary <%= node[:nginx][:gzip_vary] %>;
+  gzip_disable "<%= node[:nginx][:gzip_disable] %>";
   <% end %>
 
-  location / {
-    try_files $uri/index.html $uri/index.htm @unicorn;
-  }
+  client_max_body_size <%= node[:nginx][:client_max_body_size] %>;
 
-  location @unicorn {
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header Host $http_host;
-    proxy_redirect off;
+  server_names_hash_bucket_size <%= node[:nginx][:server_names_hash_bucket_size] %>;
 
-  <% if node[:nginx] && node[:nginx][:proxy_read_timeout] -%>
-    proxy_read_timeout <%= node[:nginx][:proxy_read_timeout] %>;
-  <% end -%>
-  <% if node[:nginx] && node[:nginx][:proxy_send_timeout] -%>
-    proxy_send_timeout <%= node[:nginx][:proxy_send_timeout] %>;
-  <% end -%>
-
-    # If you don't find the filename in the static files
-    # Then request it from the unicorn server
-    if (!-f $request_filename) {
-      proxy_pass http://unicorn_<%= node[:domains].first %>;
-      break;
-    }
-  }
-
-  error_page 500 502 503 504 /500.html;
-  location = /500.html {
-    root <%= node[:absolute_document_root] %>;
-  }
+  include <%= node[:nginx][:dir] %>/conf.d/*.conf;
+  include <%= node[:nginx][:dir] %>/sites-enabled/*;
 }
-<% end %>
