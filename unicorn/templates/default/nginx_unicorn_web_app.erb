@@ -1,3 +1,18 @@
+<% if @application[:nginx][:proxy_cache] == "on" %>
+proxy_cache_path <%= @application[:deploy_to]%>/nginx_cache levels=1:2 keys_zone=zone_<%= @application[:domains].first %>:10m max_size=500m inactive=24h;
+proxy_cache_methods GET HEAD;
+proxy_cache_lock on;
+proxy_cache_lock_timeout 4s;
+proxy_cache_use_stale timeout updating;
+<% end %>
+
+<% if @application[:nginx][:redirection] %>
+server {
+  listen <%= @application[:nginx][:redirection][:port] %>;
+  rewrite ^(.*) <%= @application[:nginx][:redirection][:url] %>$1 permanent;
+}
+<% end %>
+
 upstream unicorn_<%= @application[:domains].first %> {
  server unix:<%= @application[:deploy_to]%>/shared/sockets/unicorn.sock fail_timeout=0;
 }
@@ -22,6 +37,22 @@ server {
     client_max_body_size <%= @application[:nginx][:client_max_body_size] %>;
   <% end %>
 
+  # TODO - handle more than one
+  <% if @application[:nginx][:locations] %>
+  location ~ <%= @application[:nginx][:locations][0][:regex] %> {
+    <% if @application[:nginx][:locations][0][:cacheheaders] == "on" %>
+    expires 1y;
+    add_header Cache-Control public;
+    add_header Last-Modified "";
+    add_header ETag $1;
+    <% end %>
+    <% if @application[:nginx][:locations][0][:origin] %>
+    add_header Access-Control-Allow-Origin <%= @application[:nginx][:locations][0][:origin] %>;
+    <% end %>
+    break;
+  }
+  <% end %>
+
   location / {
     try_files $uri/index.html $uri/index.htm @unicorn;
   }
@@ -44,6 +75,13 @@ server {
       proxy_pass http://unicorn_<%= @application[:domains].first %>;
       break;
     }
+
+    # Derby customizations
+    <% if @application[:nginx][:proxy_cache] == "on" %>
+    add_header X-Cache-Status $upstream_cache_status;
+
+    proxy_cache zone_<%= @application[:domains].first %>;
+    <% end %>
   }
 
   location /nginx_status {
@@ -57,6 +95,8 @@ server {
   location = /500.html {
     root <%= @application[:absolute_document_root] %>;
   }
+
+  server_tokens off;
 }
 
 <% if @application[:ssl_support] %>
@@ -64,7 +104,7 @@ server {
   listen   443;
   server_name <%= @application[:domains].join(" ") %> <%= node[:hostname] %>;
   access_log <%= node[:nginx][:log_dir] %>/<%= @application[:domains].first %>-ssl.access.log;
-  
+
   ssl on;
   ssl_certificate /etc/nginx/ssl/<%= @application[:domains].first %>.crt;
   ssl_certificate_key /etc/nginx/ssl/<%= @application[:domains].first %>.key;
